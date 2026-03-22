@@ -94,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Fetch profile data
     const { data } = await supabase
       .from("profiles")
-      .select("full_name, department_id, group_id, onboarding_complete")
+      .select("full_name, department_id, group_id, onboarding_complete, username")
       .eq("user_id", userId)
       .maybeSingle();
 
@@ -105,8 +105,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         department_id: (data as any).department_id || null,
         group_id: (data as any).group_id || null,
         onboarding_complete: (data as any).onboarding_complete || false,
-        username: null,
+        username: (data as any).username || null,
       });
+    } else {
+      // Profile doesn't exist — create one (upsert to prevent ghost users)
+      const { data: newProfile } = await supabase
+        .from("profiles")
+        .upsert({ user_id: userId, full_name: "", onboarding_complete: false } as any, { onConflict: "user_id" })
+        .select("full_name, department_id, group_id, onboarding_complete, username")
+        .maybeSingle();
+
+      if (newProfile) {
+        setFullName("");
+        setProfile({
+          full_name: "",
+          department_id: null,
+          group_id: null,
+          onboarding_complete: false,
+          username: (newProfile as any).username || null,
+        });
+      } else {
+        setProfile({ full_name: "", department_id: null, group_id: null, onboarding_complete: false, username: null });
+      }
     }
 
     // Check admin status via RPC

@@ -18,6 +18,7 @@ const ScorePage = lazy(() => import("./pages/ScorePage"));
 const MyExamsPage = lazy(() => import("./pages/MyExamsPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
+const ProfilePage = lazy(() => import("./pages/ProfilePage"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
@@ -65,6 +66,7 @@ const App = () => (
                   <Route path="/score" element={<RequireAuth><ScorePage /></RequireAuth>} />
                   <Route path="/my-exams" element={<RequireAuth><MyExamsPage /></RequireAuth>} />
                   <Route path="/admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
+                  <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
                 </Route>
                 <Route path="/auth" element={<AuthPage />} />
                 <Route path="/onboarding" element={<OnboardingPage />} />

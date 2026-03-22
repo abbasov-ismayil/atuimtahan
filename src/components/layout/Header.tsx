@@ -111,9 +111,9 @@ export default function Header() {
 
             {user ? (
               <div className="flex items-center gap-2 ml-2 pl-2 border-l border-primary-foreground/20">
-                <span className="text-sm text-primary-foreground font-medium">
+                <Link to="/profile" className="text-sm text-primary-foreground font-medium hover:text-primary-foreground/80 transition-colors">
                   <User className="h-3.5 w-3.5 inline mr-1" />{displayName}
-                </span>
+                </Link>
                 <button onClick={() => setShowLogout(true)}
                   className="text-primary-foreground/70 hover:text-primary-foreground p-1.5 rounded-lg transition-colors"
                   title="Çıxış">
@@ -164,7 +164,8 @@ export default function Header() {
             )}
             {user ? (
               <div className="mt-2 pt-2 border-t border-primary-foreground/10">
-                <p className="px-4 py-1 text-sm text-primary-foreground font-medium">{displayName}</p>
+                <Link to="/profile" onClick={() => setOpen(false)}
+                  className="block px-4 py-1 text-sm text-primary-foreground font-medium">{displayName}</Link>
                 <button onClick={() => { setOpen(false); setShowLogout(true); }}
                   className="block w-full text-left px-4 py-2.5 rounded-lg text-sm font-medium text-primary-foreground/70">
                   Çıxış
