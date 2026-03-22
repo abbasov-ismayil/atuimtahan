@@ -45,6 +45,12 @@ Qiymətləndirmə meyarları:
 - 7-8: Yaxşı, əsas məqamları düzgün izah edir
 - 9-10: Əla, tam və dəqiq cavab
 
+HƏR BİR RƏYDƏ konkret olaraq izah et:
+1. Cavabda hansı məqamlar düzgündür
+2. Hansı məqamlar çatışmır və ya səhvdir (əgər tam bal deyilsə)
+3. Tam bal almaq üçün nə əlavə edilməli idi
+Məsələn: "8/10 - Əsas konsepsiya düzgün izah edilib, lakin X və Y məqamları çatışmır. Tam bal üçün Z haqqında da yazmaq lazım idi."
+
 CAVABINI MÜTLƏQ bu JSON formatında ver (heç bir əlavə mətn olmadan):
 {"scores": [bal1, bal2, bal3, bal4, bal5], "feedback": ["rəy1", "rəy2", "rəy3", "rəy4", "rəy5"]}`
           },

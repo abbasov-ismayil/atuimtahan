@@ -11,6 +11,7 @@ interface ExamState {
   isRunning: boolean;
   isFinished: boolean;
   isOfficial: boolean;
+  examName: string;
   rangeStart: number;
   rangeEnd: number;
   rangeOrder: "sequential" | "random" | "random50";
@@ -26,6 +27,7 @@ interface ExamState {
   setRange: (start: number, end: number) => void;
   setRangeOrder: (order: "sequential" | "random" | "random50") => void;
   setIsOfficial: (v: boolean) => void;
+  setExamName: (name: string) => void;
 }
 
 export const useExamStore = create<ExamState>((set) => ({
@@ -36,6 +38,7 @@ export const useExamStore = create<ExamState>((set) => ({
   isRunning: false,
   isFinished: false,
   isOfficial: false,
+  examName: "",
   rangeStart: 1,
   rangeEnd: 50,
   rangeOrder: "sequential",
@@ -59,9 +62,11 @@ export const useExamStore = create<ExamState>((set) => ({
       isRunning: false,
       isFinished: false,
       isOfficial: false,
+      examName: "",
       timeLeft: 3600,
     }),
   setRange: (start, end) => set({ rangeStart: start, rangeEnd: end }),
   setRangeOrder: (order) => set({ rangeOrder: order }),
   setIsOfficial: (v) => set({ isOfficial: v }),
+  setExamName: (name) => set({ examName: name }),
 }));

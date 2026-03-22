@@ -41,6 +41,12 @@ export async function parseDocx(file: File): Promise<ParsedQuestion[]> {
     .replace(/<\/li>/gi, "\n")
     .replace(/<[^>]+>/g, "") // digər bütün HTML teqlərini silirik
     .replace(/&nbsp;/g, " ") // boşluq kodlarını normal boşluğa çeviririk
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10))) // numeric HTML entities (Cyrillic etc.)
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16))) // hex HTML entities
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean);
@@ -59,6 +65,14 @@ export async function parseDocx(file: File): Promise<ParsedQuestion[]> {
       }
     }
   }
+
+  // Cyrillic-to-Latin option letter mapping
+  const cyrillicToLatin: Record<string, string> = {
+    'А': 'A', 'а': 'A', 'Б': 'B', 'б': 'B', 'В': 'C', 'в': 'C',
+    'Г': 'D', 'г': 'D', 'Д': 'E', 'д': 'E', 'Е': 'F', 'е': 'F',
+    'Ъ': 'G', 'ъ': 'G',
+  };
+  const cyrillicOptionLetters = 'АаБбВвГгДдЕеЪъ';
 
   const genericPattern = /^\s*(\d+)\s*[.)-]\s*(.*)/;
   
@@ -79,7 +93,7 @@ export async function parseDocx(file: File): Promise<ParsedQuestion[]> {
             let variantCount = 0;
             for (let j = blockLines.length - 1; j >= 0; j--) {
                 // AVTOMATİK NÖMRƏLƏMƏ ÜÇÜN DƏYİŞİKLİK: regex həm A-E hərfini, həm də qruplaşdırılmış siyahı markerini axtarır
-                if (/^\s*([A-Ea-e][.):\-]|@li_\d+@)/.test(blockLines[j])) {
+                if (/^\s*([A-Ea-e][.):\-]|@li_\d+@)/.test(blockLines[j]) || new RegExp(`^\\s*[${cyrillicOptionLetters}][.):\\-]`).test(blockLines[j])) {
                     variantCount++;
                 } else {
                     break;
@@ -139,7 +153,7 @@ export async function parseDocx(file: File): Promise<ParsedQuestion[]> {
       const fullText = [questionHeader, ...cleanTextPart].join("\n");
 
       // AVTOMATİK NÖMRƏLƏMƏ ÜÇÜN DƏYİŞİKLİK: Variantlardan lazımsız markerləri təmizləyirik
-      const options = optionPart.map(opt => opt.replace(/^\s*([A-Ea-e][.):\-]?|@li_\d+@)\s*/, "").trim());
+      const options = optionPart.map(opt => opt.replace(new RegExp(`^\\s*([A-Ea-e${cyrillicOptionLetters}][.):\\-]?|@li_\\d+@)\\s*`), "").trim());
 
       if (options.length >= 5) {
         questions.push({

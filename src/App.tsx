@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -6,16 +7,18 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import Layout from "@/components/layout/Layout";
-import Index from "./pages/Index";
-import ExamPage from "./pages/ExamPage";
-import ShufflePage from "./pages/ShufflePage";
-import TicketPage from "./pages/TicketPage";
-import ScorePage from "./pages/ScorePage";
-import MyExamsPage from "./pages/MyExamsPage";
 import AuthPage from "./pages/AuthPage";
-import AdminPage from "./pages/AdminPage";
-import OnboardingPage from "./pages/OnboardingPage";
-import NotFound from "./pages/NotFound";
+
+// Lazy load non-critical routes
+const Index = lazy(() => import("./pages/Index"));
+const ExamPage = lazy(() => import("./pages/ExamPage"));
+const ShufflePage = lazy(() => import("./pages/ShufflePage"));
+const TicketPage = lazy(() => import("./pages/TicketPage"));
+const ScorePage = lazy(() => import("./pages/ScorePage"));
+const MyExamsPage = lazy(() => import("./pages/MyExamsPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const OnboardingPage = lazy(() => import("./pages/OnboardingPage"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient();
 
@@ -38,6 +41,12 @@ function RequireAdmin({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+const PageLoader = () => (
+  <div className="flex min-h-screen items-center justify-center">
+    <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+  </div>
+);
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
@@ -46,20 +55,22 @@ const App = () => (
         <Sonner />
         <BrowserRouter>
           <AuthProvider>
-            <Routes>
-              <Route element={<Layout />}>
-                <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
-                <Route path="/exam" element={<RequireAuth><ExamPage /></RequireAuth>} />
-                <Route path="/shuffle" element={<RequireAuth><ShufflePage /></RequireAuth>} />
-                <Route path="/ticket" element={<RequireAuth><TicketPage /></RequireAuth>} />
-                <Route path="/score" element={<RequireAuth><ScorePage /></RequireAuth>} />
-                <Route path="/my-exams" element={<RequireAuth><MyExamsPage /></RequireAuth>} />
-                <Route path="/admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
-              </Route>
-              <Route path="/auth" element={<AuthPage />} />
-              <Route path="/onboarding" element={<OnboardingPage />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                <Route element={<Layout />}>
+                  <Route path="/" element={<RequireAuth><Index /></RequireAuth>} />
+                  <Route path="/exam" element={<RequireAuth><ExamPage /></RequireAuth>} />
+                  <Route path="/shuffle" element={<RequireAuth><ShufflePage /></RequireAuth>} />
+                  <Route path="/ticket" element={<RequireAuth><TicketPage /></RequireAuth>} />
+                  <Route path="/score" element={<RequireAuth><ScorePage /></RequireAuth>} />
+                  <Route path="/my-exams" element={<RequireAuth><MyExamsPage /></RequireAuth>} />
+                  <Route path="/admin" element={<RequireAdmin><AdminPage /></RequireAdmin>} />
+                </Route>
+                <Route path="/auth" element={<AuthPage />} />
+                <Route path="/onboarding" element={<OnboardingPage />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
           </AuthProvider>
         </BrowserRouter>
       </TooltipProvider>

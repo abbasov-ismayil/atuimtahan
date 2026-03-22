@@ -144,6 +144,7 @@ function ExamSetup({ parsedCount, loading, onStart, onLoadSaved }: {
 
   const loadSavedExam = (exam: SavedExam) => {
     setSelectedExamId(exam.id);
+    store.setExamName(exam.name);
     onLoadSaved(exam.questions_data, true);
     toast.success(`"${exam.name}" yükləndi (${exam.question_count} sual)`);
   };
@@ -262,7 +263,7 @@ function ExamResults() {
       if (store.isOfficial) {
         await supabase.from("exam_results" as any).insert([{
           user_id: user.id,
-          exam_name: `Rəsmi İmtahan - ${new Date().toLocaleDateString("az-AZ")}`,
+          exam_name: store.examName || `İmtahan - ${new Date().toLocaleDateString("az-AZ")}`,
           exam_type: "test",
           total_questions: total,
           correct_count: correct,
@@ -274,7 +275,7 @@ function ExamResults() {
       }
       await supabase.from("exam_history").insert([{
         user_id: user.id,
-        exam_name: `İmtahan - ${new Date().toLocaleDateString("az-AZ")}`,
+        exam_name: store.examName || `İmtahan - ${new Date().toLocaleDateString("az-AZ")}`,
         total_questions: total,
         correct_count: correct,
         wrong_count: wrong,

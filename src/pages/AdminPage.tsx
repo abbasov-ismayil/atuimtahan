@@ -9,7 +9,8 @@ import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import {
   Shield, Users, FolderOpen, BarChart3, Plus, Trash2, ChevronRight, ChevronDown,
-  Upload, GraduationCap, FileText, MessageSquare, Send, Check, X, Loader2, Lock, AlertTriangle
+  Upload, GraduationCap, FileText, MessageSquare, Send, Check, X, Loader2, Lock, AlertTriangle,
+  RefreshCw, Key
 } from "lucide-react";
 
 type Tab = "monitoring" | "exams" | "groups" | "admins" | "messages" | "users";
@@ -23,6 +24,29 @@ interface DeletionRequest { id: string; requested_by: string; admin_email: strin
 interface ChatMessage { id: string; sender_id: string; receiver_id: string | null; exam_result_id: string | null; content: string; is_from_admin: boolean; read: boolean; created_at: string; }
 interface GroupExam { id: string; name: string; group_id: string; exam_type: string; question_count: number; created_at: string; }
 
+/* ─── Confirmation Modal ─── */
+function ConfirmModal({ open, title, message, onConfirm, onCancel, destructive }: {
+  open: boolean; title: string; message: string; onConfirm: () => void; onCancel: () => void; destructive?: boolean;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+        className="bg-card border border-border rounded-2xl p-6 max-w-sm w-full mx-4 shadow-xl">
+        <div className="flex items-center gap-3 mb-4">
+          <AlertTriangle className={`h-6 w-6 ${destructive ? "text-destructive" : "text-primary"}`} />
+          <h3 className="text-lg font-bold text-foreground">{title}</h3>
+        </div>
+        <p className="text-sm text-muted-foreground mb-6">{message}</p>
+        <div className="flex gap-3">
+          <Button onClick={onCancel} variant="outline" className="flex-1 rounded-xl">Xeyr</Button>
+          <Button onClick={onConfirm} className={`flex-1 rounded-xl font-bold ${destructive ? "bg-destructive text-white hover:bg-destructive/90" : "gradient-cherry text-white"}`}>Bəli</Button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 /* ─── Admin Management ─── */
 function AdminsTab() {
   const { user, isSuperAdmin } = useAuth();
@@ -31,6 +55,10 @@ function AdminsTab() {
   const [newPassword, setNewPassword] = useState("");
   const [deletionRequests, setDeletionRequests] = useState<DeletionRequest[]>([]);
   const [creating, setCreating] = useState(false);
+  const [changingPw, setChangingPw] = useState(false);
+  const [newPw, setNewPw] = useState("");
+  const [showPwForm, setShowPwForm] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; email: string } | null>(null);
 
   const load = useCallback(() => {
     supabase.from("admins" as any).select("id, email").order("created_at").then(({ data }) => {
@@ -44,20 +72,50 @@ function AdminsTab() {
   useEffect(() => { load(); }, [load]);
 
   const createAdmin = async () => {
-    if (!newUsername.trim() || !newPassword.trim()) return;
+    if (!newUsername.trim() || !newPassword.trim()) {
+      toast.error("İstifadəçi adı və şifrə daxil edin");
+      return;
+    }
     setCreating(true);
-    const { data, error } = await supabase.functions.invoke("manage-users", {
-      body: { action: "create-admin", username: newUsername.trim(), password: newPassword.trim() },
-    });
-    if (error || data?.error) toast.error(data?.error || "Xəta baş verdi");
-    else { toast.success("Admin yaradıldı"); setNewUsername(""); setNewPassword(""); load(); }
+    try {
+      const { data, error } = await supabase.functions.invoke("manage-users", {
+        body: { action: "create-admin", username: newUsername.trim(), password: newPassword.trim() },
+      });
+      if (error) {
+        toast.error("Xəta baş verdi: " + error.message);
+      } else if (data?.error) {
+        // Handle duplicate admin re-creation
+        if (data.error.includes("already been registered") || data.error.includes("already exists")) {
+          toast.error("Bu istifadəçi artıq mövcuddur. Fərqli ad istifadə edin.");
+        } else {
+          toast.error(data.error);
+        }
+      } else {
+        toast.success("Admin yaradıldı");
+        setNewUsername("");
+        setNewPassword("");
+        load();
+      }
+    } catch (e) {
+      toast.error("Xəta: " + (e as Error).message);
+    }
     setCreating(false);
   };
 
-  const requestDelete = async (id: string, email: string) => {
+  const changeMyPassword = async () => {
+    if (!newPw.trim() || newPw.length < 6) { toast.error("Şifrə minimum 6 simvol olmalıdır"); return; }
+    setChangingPw(true);
+    const { error } = await supabase.functions.invoke("manage-users", {
+      body: { action: "change-password", newPassword: newPw.trim() },
+    });
+    if (error) toast.error("Xəta baş verdi");
+    else { toast.success("Şifrə dəyişdirildi"); setNewPw(""); setShowPwForm(false); }
+    setChangingPw(false);
+  };
+
+  const executeDelete = async (id: string, email: string) => {
     if (email === "atuimtahanportali@atu.edu.az") { toast.error("Super Admin silinə bilməz"); return; }
     if (!user) return;
-
     if (isSuperAdmin) {
       await supabase.from("admins" as any).delete().eq("id", id);
       toast.success("Admin silindi");
@@ -69,6 +127,7 @@ function AdminsTab() {
       toast.success("Silmə sorğusu Super Adminə göndərildi");
       load();
     }
+    setDeleteConfirm(null);
   };
 
   const handleDeletionRequest = async (requestId: string, approved: boolean) => {
@@ -82,6 +141,33 @@ function AdminsTab() {
 
   return (
     <div className="space-y-6">
+      <ConfirmModal open={!!deleteConfirm} title="Admini Sil" destructive
+        message={`"${deleteConfirm?.email}" adminini silmək istədiyinizə əminsiniz?`}
+        onConfirm={() => deleteConfirm && executeDelete(deleteConfirm.id, deleteConfirm.email)}
+        onCancel={() => setDeleteConfirm(null)} />
+
+      <div className="flex items-center gap-3 mb-2">
+        <Shield className="h-6 w-6 text-primary" />
+        <h3 className="text-lg font-bold text-foreground">Admin İdarəetməsi</h3>
+      </div>
+
+      {/* Password change */}
+      <div className="p-4 rounded-xl border border-border bg-muted/20">
+        <button onClick={() => setShowPwForm(!showPwForm)} className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <Key className="h-4 w-4 text-primary" /> Şifrəmi Dəyiş
+          {showPwForm ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+        </button>
+        {showPwForm && (
+          <div className="mt-3 space-y-2">
+            <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)}
+              placeholder="Yeni şifrə (min 6 simvol)" className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary" />
+            <Button onClick={changeMyPassword} disabled={changingPw} className="gradient-cherry text-white rounded-xl w-full">
+              {changingPw ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Lock className="h-4 w-4 mr-1" />} Şifrəni Yenilə
+            </Button>
+          </div>
+        )}
+      </div>
+
       {isSuperAdmin && deletionRequests.length > 0 && (
         <div className="space-y-2">
           <p className="text-sm font-bold text-destructive flex items-center gap-2">
@@ -129,7 +215,7 @@ function AdminsTab() {
               )}
             </div>
             {a.email !== "atuimtahanportali@atu.edu.az" && (
-              <button onClick={() => requestDelete(a.id, a.email)} className="text-destructive hover:text-destructive/80 p-1">
+              <button onClick={() => setDeleteConfirm({ id: a.id, email: a.email })} className="text-destructive hover:text-destructive/80 p-1">
                 <Trash2 className="h-4 w-4" />
               </button>
             )}
@@ -140,14 +226,16 @@ function AdminsTab() {
   );
 }
 
-/* ─── Groups Management ─── */
+/* ─── Groups Management (Accordion by Faculty) ─── */
 function GroupsTab() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupExams, setGroupExams] = useState<GroupExam[]>([]);
   const [selectedDept, setSelectedDept] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
+  const [expandedDept, setExpandedDept] = useState<string | null>(null);
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
+  const [deleteGroupConfirm, setDeleteGroupConfirm] = useState<{ id: string; name: string; type: "group" | "exam" } | null>(null);
 
   const loadAll = useCallback(() => {
     supabase.from("departments" as any).select("id, name").order("name").then(({ data }) => {
@@ -170,20 +258,34 @@ function GroupsTab() {
     else { toast.success("Qrup əlavə edildi"); setNewGroupName(""); loadAll(); }
   };
 
-  const deleteGroup = async (id: string) => {
-    await supabase.from("groups" as any).delete().eq("id", id);
-    toast.success("Qrup silindi");
+  const executeDeleteGroup = async () => {
+    if (!deleteGroupConfirm) return;
+    if (deleteGroupConfirm.type === "group") {
+      await supabase.from("groups" as any).delete().eq("id", deleteGroupConfirm.id);
+      toast.success("Qrup silindi");
+    } else {
+      await supabase.from("group_exams" as any).delete().eq("id", deleteGroupConfirm.id);
+      toast.success("İmtahan silindi");
+    }
+    setDeleteGroupConfirm(null);
     loadAll();
   };
 
-  const deleteExam = async (id: string) => {
-    await supabase.from("group_exams" as any).delete().eq("id", id);
-    toast.success("İmtahan silindi");
-    loadAll();
-  };
+  // deleteExam now goes through confirmation modal
 
   return (
     <div className="space-y-6">
+      <ConfirmModal open={!!deleteGroupConfirm} title={deleteGroupConfirm?.type === "group" ? "Qrupu Sil" : "İmtahanı Sil"} destructive
+        message={deleteGroupConfirm?.type === "group"
+          ? `"${deleteGroupConfirm?.name}" qrupunu silmək istədiyinizə əminsiniz? Bu əməliyyat geri qaytarıla bilməz.`
+          : `"${deleteGroupConfirm?.name}" imtahanını silmək istədiyinizə əminsiniz? Bu əməliyyat geri qaytarıla bilməz.`}
+        onConfirm={executeDeleteGroup}
+        onCancel={() => setDeleteGroupConfirm(null)} />
+      <div className="flex items-center gap-3 mb-2">
+        <Users className="h-6 w-6 text-primary" />
+        <h3 className="text-lg font-bold text-foreground">Qruplar</h3>
+      </div>
+
       <div className="space-y-3">
         <select value={selectedDept} onChange={(e) => setSelectedDept(e.target.value)}
           className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary">
@@ -199,52 +301,66 @@ function GroupsTab() {
         </div>
       </div>
 
-      {departments.map((dept) => {
-        const deptGroups = groups.filter((g) => g.department_id === dept.id);
-        if (deptGroups.length === 0) return null;
-        return (
-          <div key={dept.id} className="space-y-2">
-            <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">{dept.name}</p>
-            {deptGroups.map((g) => {
-              const gExams = groupExams.filter((e) => e.group_id === g.id);
-              const isExpanded = expandedGroup === g.id;
-              return (
-                <div key={g.id} className="rounded-xl border border-border bg-card overflow-hidden">
-                  <div className="flex items-center justify-between p-3">
-                    <button onClick={() => setExpandedGroup(isExpanded ? null : g.id)} className="flex items-center gap-2 flex-1">
-                      {isExpanded ? <ChevronDown className="h-4 w-4 text-primary" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-                      <Users className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-medium">{g.name}</span>
-                      <span className="text-xs text-muted-foreground">({gExams.length} imtahan)</span>
-                    </button>
-                    <button onClick={() => deleteGroup(g.id)} className="text-destructive hover:text-destructive/80 p-1">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                  {isExpanded && gExams.length > 0 && (
-                    <div className="border-t border-border px-3 pb-3 pt-2 space-y-1.5">
-                      {gExams.map((ex) => (
-                        <div key={ex.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                          <div className="flex items-center gap-2">
-                            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="text-xs font-medium">{ex.name}</span>
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                              ex.exam_type === "ticket" ? "bg-purple-100 text-purple-700" : "bg-primary/10 text-primary"
-                            }`}>{ex.exam_type === "ticket" ? "Bilet" : "Test"}</span>
-                          </div>
-                          <button onClick={() => deleteExam(ex.id)} className="text-destructive/60 hover:text-destructive p-1">
+      <div className="space-y-2">
+        {departments.map((dept) => {
+          const deptGroups = groups.filter((g) => g.department_id === dept.id);
+          const isDeptExpanded = expandedDept === dept.id;
+          return (
+            <div key={dept.id} className="rounded-xl border border-border bg-card overflow-hidden">
+              <button onClick={() => setExpandedDept(isDeptExpanded ? null : dept.id)}
+                className="w-full flex items-center gap-2 p-3 hover:bg-muted/50 transition-colors">
+                {isDeptExpanded ? <ChevronDown className="h-4 w-4 text-primary" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                <GraduationCap className="h-4 w-4 text-primary" />
+                <span className="text-sm font-semibold text-foreground">{dept.name}</span>
+                <span className="text-xs text-muted-foreground ml-auto">{deptGroups.length} qrup</span>
+              </button>
+              {isDeptExpanded && (
+                <div className="border-t border-border px-3 pb-3 pt-2 space-y-2">
+                  {deptGroups.length === 0 ? (
+                    <p className="text-xs text-muted-foreground p-2">Bu fakültədə qrup yoxdur</p>
+                  ) : deptGroups.map((g) => {
+                    const gExams = groupExams.filter((e) => e.group_id === g.id);
+                    const isExpanded = expandedGroup === g.id;
+                    return (
+                      <div key={g.id} className="rounded-lg border border-border/50 bg-muted/10 overflow-hidden">
+                        <div className="flex items-center justify-between p-2.5">
+                          <button onClick={() => setExpandedGroup(isExpanded ? null : g.id)} className="flex items-center gap-2 flex-1">
+                            {isExpanded ? <ChevronDown className="h-3.5 w-3.5 text-primary" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                            <Users className="h-3.5 w-3.5 text-primary" />
+                            <span className="text-sm font-medium">{g.name}</span>
+                            <span className="text-xs text-muted-foreground">({gExams.length} imtahan)</span>
+                          </button>
+                          <button onClick={() => setDeleteGroupConfirm({ id: g.id, name: g.name, type: "group" })} className="text-destructive hover:text-destructive/80 p-1">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
+                        {isExpanded && gExams.length > 0 && (
+                          <div className="border-t border-border/50 px-2.5 pb-2.5 pt-1.5 space-y-1">
+                            {gExams.map((ex) => (
+                              <div key={ex.id} className="flex items-center justify-between p-2 rounded-lg bg-background">
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <span className="text-xs font-medium">{ex.name}</span>
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                                    ex.exam_type === "ticket" ? "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300" : "bg-primary/10 text-primary"
+                                  }`}>{ex.exam_type === "ticket" ? "Bilet" : "Test"}</span>
+                                </div>
+                                <button onClick={() => setDeleteGroupConfirm({ id: ex.id, name: ex.name, type: "exam" })} className="text-destructive/60 hover:text-destructive p-1">
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        );
-      })}
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -352,78 +468,131 @@ function ExamsTab() {
   );
 }
 
-/* ─── User Import ─── */
+/* ─── User Management & Full System Reset ─── */
 function UsersTab() {
+  const { isSuperAdmin } = useAuth();
   const [importing, setImporting] = useState(false);
   const [progress, setProgress] = useState("");
+  const [importMode, setImportMode] = useState<"append" | "reset">("append");
+  const [showResetUploadConfirm, setShowResetUploadConfirm] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [showFullReset, setShowFullReset] = useState(false);
+  const [showFullResetConfirm2, setShowFullResetConfirm2] = useState(false);
+  const [fullResetting, setFullResetting] = useState(false);
 
-  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processImport = async (file: File, doReset: boolean) => {
     setImporting(true);
     setProgress("Excel oxunur...");
-
     try {
+      if (doReset) {
+        setProgress("Sistem sıfırlanır...");
+        await supabase.functions.invoke("manage-users", { body: { action: "reset-system" } });
+      }
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(sheet);
-
       if (rows.length === 0) { toast.error("Boş fayl"); setImporting(false); return; }
 
-      // Find username/password columns
       const firstRow = rows[0];
       const keys = Object.keys(firstRow);
-      const usernameKey = keys.find(k => /istifadəçi|username|ad/i.test(k)) || keys[0];
-      const passwordKey = keys.find(k => /şifrə|password|parol/i.test(k)) || keys[1];
-
-      if (!usernameKey || !passwordKey) {
-        toast.error("İstifadəçi adı və Şifrə sütunları tapılmadı");
-        setImporting(false);
-        return;
-      }
+      const usernameKey = keys.find(k => /^username$/i.test(k)) || keys[0];
+      const passwordKey = keys.find(k => /^password$/i.test(k)) || keys[1];
+      if (!usernameKey || !passwordKey) { toast.error("'username' və 'password' sütunları tapılmadı"); setImporting(false); return; }
 
       const users = rows.map(r => ({
         username: String(r[usernameKey] || "").trim(),
         password: String(r[passwordKey] || "").trim(),
       })).filter(u => u.username && u.password);
 
-      // Process in batches of 50
       const batchSize = 50;
       let totalCreated = 0, totalSkipped = 0, totalErrors = 0;
-
       for (let i = 0; i < users.length; i += batchSize) {
         const batch = users.slice(i, i + batchSize);
         setProgress(`${i}/${users.length} istifadəçi emal edilir...`);
-
-        const { data: result, error } = await supabase.functions.invoke("manage-users", {
-          body: { action: "import", users: batch },
-        });
-
+        const { data: result, error } = await supabase.functions.invoke("manage-users", { body: { action: "import", users: batch } });
         if (error) { totalErrors += batch.length; continue; }
         totalCreated += result.created || 0;
         totalSkipped += result.skipped || 0;
         totalErrors += (result.errors || []).length;
       }
-
-      toast.success(`Tamamlandı: ${totalCreated} yaradıldı, ${totalSkipped} keçirildi, ${totalErrors} xəta`);
+      toast.success(`Tamamlandı: ${totalCreated} yaradıldı, ${totalSkipped} mövcud, ${totalErrors} xəta`);
       setProgress("");
     } catch (err) {
       toast.error("Excel oxunarkən xəta: " + (err as Error).message);
-    } finally {
-      setImporting(false);
-    }
+    } finally { setImporting(false); setPendingFile(null); }
+  };
+
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (importMode === "reset") { setPendingFile(file); setShowResetUploadConfirm(true); }
+    else processImport(file, false);
+  };
+
+  const fullSystemReset = async () => {
+    setFullResetting(true);
+    try {
+      const { error } = await supabase.functions.invoke("manage-users", { body: { action: "full-reset" } });
+      if (error) toast.error("Xəta: " + error.message);
+      else toast.success("Sistem tam sıfırlandı! Bütün köhnə məlumatlar silindi.");
+    } catch (e) { toast.error("Xəta: " + (e as Error).message); }
+    setFullResetting(false);
+    setShowFullReset(false);
+    setShowFullResetConfirm2(false);
   };
 
   return (
     <div className="space-y-6">
+      <ConfirmModal open={showResetUploadConfirm} title="Sistemi Sıfırla və Yüklə" destructive
+        message="Bütün köhnə data silinəcək və yeni istifadəçilər yüklənəcək. Davam etmək istəyirsiniz?"
+        onConfirm={() => { setShowResetUploadConfirm(false); if (pendingFile) processImport(pendingFile, true); }}
+        onCancel={() => { setShowResetUploadConfirm(false); setPendingFile(null); }} />
+
+      {/* First confirm */}
+      <ConfirmModal open={showFullReset && !showFullResetConfirm2} title="Sistemi Tam Sıfırla" destructive
+        message="Bu əməliyyat bütün tələbələri, imtahanları, nəticələri, köhnə admin qeydlərini siləcək. Davam etmək istəyirsiniz?"
+        onConfirm={() => setShowFullResetConfirm2(true)}
+        onCancel={() => setShowFullReset(false)} />
+      {/* Second confirm */}
+      <ConfirmModal open={showFullResetConfirm2} title="SON TƏSDİQ" destructive
+        message="Bu əməliyyat GERİ QAYTARILMAZ. Bütün istifadəçilər, imtahanlar və admin qeydləri silinəcək. Tam əminsiniz?"
+        onConfirm={fullSystemReset}
+        onCancel={() => { setShowFullResetConfirm2(false); setShowFullReset(false); }} />
+
       <div className="flex items-center gap-3 mb-2">
         <Upload className="h-6 w-6 text-primary" />
-        <h3 className="text-lg font-bold text-foreground">İstifadəçi Bazası Yüklə</h3>
+        <h3 className="text-lg font-bold text-foreground">İstifadəçi Bazası</h3>
       </div>
       <p className="text-sm text-muted-foreground">
-        Excel (.xlsx) faylında "İstifadəçi adı" və "Şifrə" sütunları olmalıdır.
+        Excel (.xlsx) faylında <strong>"username"</strong> və <strong>"password"</strong> sütunları olmalıdır.
       </p>
+
+      <div className="flex gap-2">
+        <button onClick={() => setImportMode("append")}
+          className={`flex-1 px-4 py-3 rounded-xl text-sm font-medium border transition-all ${
+            importMode === "append" ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground"
+          }`}>
+          <Plus className="h-4 w-4 inline mr-1" /> Mövcud Bazaya Əlavə Et
+        </button>
+        <button onClick={() => setImportMode("reset")}
+          className={`flex-1 px-4 py-3 rounded-xl text-sm font-medium border transition-all ${
+            importMode === "reset" ? "bg-destructive text-white border-destructive" : "bg-background border-border text-muted-foreground"
+          }`}>
+          <RefreshCw className="h-4 w-4 inline mr-1" /> Sıfırla və Yüklə
+        </button>
+      </div>
+
+      {importMode === "append" && (
+        <p className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-lg">
+          Mövcud tələbələr saxlanılacaq, yalnız yeni istifadəçilər əlavə olunacaq (duplikat yoxlanır).
+        </p>
+      )}
+      {importMode === "reset" && (
+        <p className="text-xs text-destructive bg-destructive/5 p-3 rounded-lg">
+          ⚠️ Bütün köhnə data (imtahanlar, nəticələr, istifadəçilər) silinəcək və yeni bazadan yüklənəcək.
+        </p>
+      )}
 
       <label className={`flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed cursor-pointer transition-all ${
         importing ? "border-primary/50 bg-primary/5" : "border-border hover:border-primary/30"
@@ -442,12 +611,30 @@ function UsersTab() {
         )}
         <input type="file" accept=".xlsx,.xls" onChange={handleExcelUpload} disabled={importing} className="hidden" />
       </label>
+
+      {/* Full System Reset */}
+      {isSuperAdmin && (
+        <div className="p-4 rounded-xl border border-destructive/20 bg-destructive/5 space-y-3">
+          <p className="text-sm font-bold text-destructive flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" /> Sistemi Tam Sıfırla
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Bütün tələbələr, imtahanlar, nəticələr, köhnə admin qeydləri silinəcək. Sistem sıfırdan başlayacaq.
+          </p>
+          <Button onClick={() => setShowFullReset(true)} disabled={fullResetting}
+            className="bg-destructive text-white hover:bg-destructive/90 rounded-xl">
+            {fullResetting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <AlertTriangle className="h-4 w-4 mr-1" />}
+            Sistemi Tam Sıfırla
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
 
 /* ─── Monitoring Tree View ─── */
 function MonitoringTab() {
+  const { isSuperAdmin } = useAuth();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -455,8 +642,11 @@ function MonitoringTab() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [selectedStudent, setSelectedStudent] = useState<string | null>(null);
   const [studentResults, setStudentResults] = useState<ExamResult[]>([]);
+  const [resetConfirm, setResetConfirm] = useState<{ userId: string; name: string } | null>(null);
+  const [deleteStudentConfirm, setDeleteStudentConfirm] = useState<{ userId: string; name: string } | null>(null);
+  const [resetting, setResetting] = useState(false);
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     Promise.all([
       supabase.from("departments" as any).select("id, name").order("name"),
       supabase.from("groups" as any).select("id, name, department_id").order("name"),
@@ -468,6 +658,8 @@ function MonitoringTab() {
     });
   }, []);
 
+  useEffect(() => { loadData(); }, [loadData]);
+
   const toggleDept = (id: string) => {
     setExpandedDepts((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
   };
@@ -476,17 +668,66 @@ function MonitoringTab() {
   };
 
   const loadStudentResults = async (userId: string) => {
+    if (selectedStudent === userId) { setSelectedStudent(null); return; }
     setSelectedStudent(userId);
     const { data } = await supabase
       .from("exam_results" as any)
       .select("id, exam_name, exam_type, percentage, score, total_questions, correct_count, created_at, is_official")
-      .eq("user_id", userId).eq("is_official", true)
+      .eq("user_id", userId)
+      .eq("is_official", true)
       .order("created_at", { ascending: false });
     if (data) setStudentResults(data as any);
+    else setStudentResults([]);
+  };
+
+  const resetStudentExams = async () => {
+    if (!resetConfirm) return;
+    setResetting(true);
+    const { data, error } = await supabase.functions.invoke("manage-users", {
+      body: { action: "reset-student-exams", targetUserId: resetConfirm.userId },
+    });
+    if (error || data?.error) toast.error("Xəta: " + (error?.message || data?.error));
+    else {
+      toast.success(`"${resetConfirm.name}" tələbəsinin imtahan nəticələri və mesajları sıfırlandı`);
+      if (selectedStudent === resetConfirm.userId) {
+        setStudentResults([]);
+      }
+    }
+    setResetting(false);
+    setResetConfirm(null);
+  };
+
+  const deleteStudent = async () => {
+    if (!deleteStudentConfirm) return;
+    setResetting(true);
+    const { data, error } = await supabase.functions.invoke("manage-users", {
+      body: { action: "delete-student", targetUserId: deleteStudentConfirm.userId },
+    });
+    if (error || data?.error) toast.error("Xəta: " + (error?.message || data?.error));
+    else {
+      toast.success(`"${deleteStudentConfirm.name}" tələbəsi silindi. Növbəti girişdə yenidən qeydiyyatdan keçəcək.`);
+      loadData();
+    }
+    setResetting(false);
+    setDeleteStudentConfirm(null);
   };
 
   return (
     <div className="space-y-2">
+      <ConfirmModal open={!!resetConfirm} title="İmtahan Nəticələrini Sıfırla" destructive
+        message={`"${resetConfirm?.name}" tələbəsinin imtahan nəticələrini və mesajlarını sıfırlamaq istəyirsiniz? (Profil məlumatları qalacaq)`}
+        onConfirm={resetStudentExams}
+        onCancel={() => setResetConfirm(null)} />
+      <ConfirmModal open={!!deleteStudentConfirm} title="Tələbəni Sil" destructive
+        message={`"${deleteStudentConfirm?.name}" tələbəni tamamilə silmək istədiyinizə əminsiniz? Bütün məlumatları silinəcək və növbəti girişdə yenidən qeydiyyatdan keçməli olacaq. Bu əməliyyat geri qaytarıla bilməz.`}
+        onConfirm={deleteStudent}
+        onCancel={() => setDeleteStudentConfirm(null)} />
+
+      <div className="flex items-center gap-3 mb-4">
+        <BarChart3 className="h-6 w-6 text-primary" />
+        <h3 className="text-lg font-bold text-foreground">Monitorinq</h3>
+      </div>
+
       {departments.map((dept) => {
         const deptGroups = groups.filter((g) => g.department_id === dept.id);
         const deptStudents = profiles.filter((p) => p.department_id === dept.id);
@@ -520,21 +761,39 @@ function MonitoringTab() {
                             <p className="text-xs text-muted-foreground p-2">Tələbə yoxdur</p>
                           ) : groupStudents.map((student) => (
                             <div key={student.user_id}>
-                              <button onClick={() => loadStudentResults(student.user_id)}
-                                className={`w-full flex items-center gap-2 p-2 rounded-lg transition-colors text-left ${
-                                  selectedStudent === student.user_id ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/30"
-                                }`}>
-                                <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-                                <span className="text-sm">{student.full_name || "Adsız"}</span>
-                              </button>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => loadStudentResults(student.user_id)}
+                                  className={`flex-1 flex items-center gap-2 p-2 rounded-lg transition-colors text-left ${
+                                    selectedStudent === student.user_id ? "bg-primary/10 border border-primary/20" : "hover:bg-muted/30"
+                                  }`}>
+                                  <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <span className="text-sm">{student.full_name || "Adsız"}</span>
+                                </button>
+                                {isSuperAdmin && (
+                                  <>
+                                    <button
+                                      onClick={() => setResetConfirm({ userId: student.user_id, name: student.full_name || "Adsız" })}
+                                      title="Qeydiyyatı Sıfırla"
+                                      className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
+                                      <RefreshCw className="h-3.5 w-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteStudentConfirm({ userId: student.user_id, name: student.full_name || "Adsız" })}
+                                      title="Tələbəni Sil"
+                                      className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
                               {selectedStudent === student.user_id && (
                                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="ml-6 mt-1 space-y-1 mb-2">
                                   {studentResults.length === 0 ? (
                                     <p className="text-xs text-muted-foreground p-2">Rəsmi nəticə yoxdur</p>
                                   ) : studentResults.map((r) => (
                                     <div key={r.id} className="p-3 rounded-lg border border-border/50 bg-card/30 text-xs space-y-1">
-                                      <div className="flex justify-between">
-                                        <span className="font-medium">{r.exam_name}</span>
+                                      <div className="flex justify-between items-center">
+                                        <span className="font-bold text-foreground">{r.exam_name || "Adsız imtahan"}</span>
                                         <span className={`px-2 py-0.5 rounded-full font-bold ${
                                           r.exam_type === "ticket" ? "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300" : "bg-primary/10 text-primary"
                                         }`}>
@@ -565,17 +824,19 @@ function MonitoringTab() {
   );
 }
 
-/* ─── Messages Tab ─── */
+/* ─── Messages Tab (Hierarchical with badges and admin name) ─── */
 function MessagesTab() {
-  const { user } = useAuth();
+  const { user, fullName: adminName } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [profiles, setProfiles] = useState<Record<string, { full_name: string; group_name: string; dept_name: string }>>({});
+  const [examNames, setExamNames] = useState<Record<string, string>>({});
   const [selectedChat, setSelectedChat] = useState<string | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [replyText, setReplyText] = useState("");
+  const [adminProfiles, setAdminProfiles] = useState<Record<string, string>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // Load all messages where receiver is admin or no receiver
     supabase.from("messages" as any)
       .select("*")
       .order("created_at", { ascending: false })
@@ -583,16 +844,65 @@ function MessagesTab() {
         if (data) setMessages(data as any);
       });
 
+    // Load profiles with group and department names
+    Promise.all([
+      supabase.from("profiles").select("user_id, full_name, group_id, department_id" as any),
+      supabase.from("groups" as any).select("id, name"),
+      supabase.from("departments" as any).select("id, name"),
+    ]).then(([profRes, groupsRes, deptRes]) => {
+      const groupMap: Record<string, string> = {};
+      ((groupsRes.data || []) as any[]).forEach((g: any) => { groupMap[g.id] = g.name; });
+      const deptMap: Record<string, string> = {};
+      ((deptRes.data || []) as any[]).forEach((d: any) => { deptMap[d.id] = d.name; });
+      const map: Record<string, { full_name: string; group_name: string; dept_name: string }> = {};
+      ((profRes.data || []) as any[]).forEach((p: any) => {
+        map[p.user_id] = {
+          full_name: p.full_name || "Adsız",
+          group_name: groupMap[p.group_id] || "",
+          dept_name: deptMap[p.department_id] || "",
+        };
+      });
+      setProfiles(map);
+    });
+
+    // Load admin profiles (to show which admin replied)
+    supabase.from("admins" as any).select("email").then(async ({ data: adminsData }) => {
+      // Build admin email -> name map from profiles
+      const profMap: Record<string, string> = {};
+      if (adminsData) {
+        const { data: allProfs } = await supabase.from("profiles").select("user_id, full_name" as any);
+        if (allProfs) {
+          (allProfs as any[]).forEach((p: any) => { profMap[p.user_id] = p.full_name || "Admin"; });
+        }
+      }
+      setAdminProfiles(profMap);
+    });
+
+    supabase.from("exam_results" as any).select("id, exam_name").then(({ data }) => {
+      if (data) {
+        const map: Record<string, string> = {};
+        (data as any[]).forEach((r: any) => { map[r.id] = r.exam_name; });
+        setExamNames(map);
+      }
+    });
+
     const channel = supabase.channel("admin-messages")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (payload) => {
         setMessages((prev) => [payload.new as any, ...prev]);
+        // Auto-update current chat
+        setChatMessages((prev) => {
+          const newMsg = payload.new as any;
+          if (newMsg.exam_result_id === selectedChat || (!newMsg.exam_result_id && selectedChat === "general")) {
+            return [...prev, newMsg];
+          }
+          return prev;
+        });
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  // Group messages by exam_result_id
   const chatGroups = messages.reduce((acc, m) => {
     const key = m.exam_result_id || "general";
     if (!acc[key]) acc[key] = [];
@@ -600,10 +910,21 @@ function MessagesTab() {
     return acc;
   }, {} as Record<string, ChatMessage[]>);
 
-  const loadChat = (examResultId: string) => {
+  const totalUnread = messages.filter(m => !m.is_from_admin && !m.read).length;
+
+  const loadChat = async (examResultId: string) => {
     setSelectedChat(examResultId);
     const msgs = chatGroups[examResultId] || [];
     setChatMessages(msgs.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+
+    // Mark unread messages as read
+    const unreadIds = msgs.filter(m => !m.is_from_admin && !m.read).map(m => m.id);
+    if (unreadIds.length > 0) {
+      for (const id of unreadIds) {
+        await supabase.from("messages" as any).update({ read: true }).eq("id", id);
+      }
+      setMessages(prev => prev.map(m => unreadIds.includes(m.id) ? { ...m, read: true } : m));
+    }
   };
 
   useEffect(() => {
@@ -623,26 +944,49 @@ function MessagesTab() {
     setReplyText("");
   };
 
+  const getStudentInfo = (chatMsgs: ChatMessage[]) => {
+    const studentMsg = chatMsgs.find(m => !m.is_from_admin);
+    if (!studentMsg) return { name: "Naməlum", group: "", dept: "", exam: "" };
+    const prof = profiles[studentMsg.sender_id];
+    return {
+      name: prof?.full_name || "Naməlum",
+      group: prof?.group_name || "",
+      dept: prof?.dept_name || "",
+      exam: studentMsg.exam_result_id ? (examNames[studentMsg.exam_result_id] || "Naməlum imtahan") : "",
+    };
+  };
+
   return (
     <div className="space-y-4">
+      <div className="flex items-center gap-3 mb-2">
+        <MessageSquare className="h-6 w-6 text-primary" />
+        <h3 className="text-lg font-bold text-foreground">Mesajlar</h3>
+        {totalUnread > 0 && (
+          <span className="px-2.5 py-0.5 rounded-full bg-destructive text-white text-xs font-bold">{totalUnread}</span>
+        )}
+      </div>
+
       {Object.keys(chatGroups).length === 0 ? (
         <p className="text-sm text-muted-foreground text-center py-8">Hələ mesaj yoxdur</p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2 max-h-96 overflow-y-auto">
             {Object.entries(chatGroups).map(([key, msgs]) => {
-              const lastMsg = msgs[0];
+              const info = getStudentInfo(msgs);
               const unread = msgs.filter(m => !m.is_from_admin && !m.read).length;
               return (
                 <button key={key} onClick={() => loadChat(key)}
                   className={`w-full text-left p-3 rounded-xl border transition-all ${
                     selectedChat === key ? "border-primary bg-primary/5" : "border-border hover:border-primary/30"
                   }`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-foreground truncate">{key === "general" ? "Ümumi" : `İmtahan #${key.slice(0, 8)}`}</span>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-bold text-foreground">{info.name}</span>
                     {unread > 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-destructive text-white font-bold">{unread}</span>}
                   </div>
-                  <p className="text-xs text-muted-foreground truncate mt-1">{lastMsg.content}</p>
+                  {info.dept && <p className="text-[10px] text-muted-foreground">{info.dept}</p>}
+                  {info.group && <p className="text-[10px] text-primary font-medium">{info.group}</p>}
+                  {info.exam && <p className="text-[10px] text-muted-foreground">📝 {info.exam}</p>}
+                  <p className="text-xs text-muted-foreground truncate mt-1">{msgs[0].content}</p>
                 </button>
               );
             })}
@@ -650,13 +994,31 @@ function MessagesTab() {
 
           {selectedChat && (
             <div className="rounded-xl border border-border p-3">
+              {/* Chat header with student details */}
+              {(() => {
+                const info = getStudentInfo(chatGroups[selectedChat] || []);
+                return (
+                  <div className="pb-3 mb-3 border-b border-border">
+                    <p className="text-sm font-bold text-foreground">{info.name}</p>
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {info.dept && <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{info.dept}</span>}
+                      {info.group && <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{info.group}</span>}
+                      {info.exam && <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent text-accent-foreground">📝 {info.exam}</span>}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="max-h-64 overflow-y-auto space-y-2 mb-3">
                 {chatMessages.map((m) => (
                   <div key={m.id} className={`text-xs p-2 rounded-lg max-w-[85%] ${
                     m.is_from_admin ? "bg-primary/10 ml-auto" : "bg-muted"
                   }`}>
                     <p className="font-medium text-[10px] text-muted-foreground mb-0.5">
-                      {m.is_from_admin ? "Siz (Admin)" : "Tələbə"}
+                      {m.is_from_admin
+                        ? (adminProfiles[m.sender_id] || adminName || "Admin")
+                        : (profiles[m.sender_id]?.full_name || "Tələbə")}
+                      {" • "}{new Date(m.created_at).toLocaleTimeString("az-AZ", { hour: "2-digit", minute: "2-digit" })}
                     </p>
                     <p className="text-foreground">{m.content}</p>
                   </div>
@@ -683,6 +1045,24 @@ function MessagesTab() {
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("monitoring");
   const { isAdmin, isSuperAdmin } = useAuth();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Load unread message count
+  useEffect(() => {
+    supabase.from("messages" as any).select("id").eq("is_from_admin", false).eq("read", false).then(({ data }) => {
+      if (data) setUnreadCount(data.length);
+    });
+
+    const channel = supabase.channel("unread-badge")
+      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => {
+        supabase.from("messages" as any).select("id").eq("is_from_admin", false).eq("read", false).then(({ data }) => {
+          if (data) setUnreadCount(data.length);
+        });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   if (!isAdmin) {
     return (
@@ -694,11 +1074,11 @@ export default function AdminPage() {
     );
   }
 
-  const tabs: { key: Tab; label: string; icon: typeof Shield; superOnly?: boolean }[] = [
+  const tabs: { key: Tab; label: string; icon: typeof Shield; badge?: number; superOnly?: boolean }[] = [
     { key: "monitoring", label: "Monitorinq", icon: BarChart3 },
     { key: "exams", label: "İmtahan Yüklə", icon: FolderOpen },
     { key: "groups", label: "Qruplar", icon: Users },
-    { key: "messages", label: "Mesajlar", icon: MessageSquare },
+    { key: "messages", label: "Mesajlar", icon: MessageSquare, badge: unreadCount },
     { key: "admins", label: "Adminlər", icon: Shield },
     ...(isSuperAdmin ? [{ key: "users" as Tab, label: "İstifadəçilər", icon: Upload, superOnly: true }] : []),
   ];
@@ -712,11 +1092,16 @@ export default function AdminPage() {
         <div className="flex gap-1 mb-8 p-1 rounded-2xl bg-muted/50 border border-border overflow-x-auto">
           {tabs.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
+              className={`relative flex items-center justify-center gap-2 px-3 py-3 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
                 tab === t.key ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
               }`}>
               <t.icon className="h-4 w-4" />
               <span className="hidden sm:inline">{t.label}</span>
+              {t.badge && t.badge > 0 && tab !== t.key && (
+                <span className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center rounded-full bg-destructive text-white text-[10px] font-bold">
+                  {t.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>

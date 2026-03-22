@@ -89,7 +89,7 @@ export default function Index() {
         </p>
       </motion.div>
 
-      {/* Cards */}
+      {/* Cards - rectangular, symmetric */}
       <div className="mx-auto max-w-4xl grid gap-4 sm:grid-cols-2">
         {features.map((f) => (
           <motion.div
@@ -100,16 +100,16 @@ export default function Index() {
           >
             <Link
               to={f.path}
-              className="group flex flex-col gap-4 rounded-2xl border border-border bg-card p-6 transition-all hover:shadow-cherry hover:border-primary/30 hover:-translate-y-1"
+              className="group flex items-center gap-5 rounded-2xl border border-border bg-card p-6 h-32 transition-all hover:shadow-cherry hover:border-primary/30 hover:-translate-y-1"
             >
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl gradient-cherry shadow-cherry">
-                <f.icon className="h-6 w-6 text-primary-foreground" />
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl gradient-cherry shadow-cherry">
+                <f.icon className="h-7 w-7 text-primary-foreground" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3 className="text-lg font-semibold text-foreground group-hover:text-primary transition-colors">
                   {f.title}
                 </h3>
-                <p className="text-sm text-muted-foreground mt-1">{f.desc}</p>
+                <p className="text-sm text-muted-foreground mt-1 line-clamp-2">{f.desc}</p>
               </div>
             </Link>
           </motion.div>

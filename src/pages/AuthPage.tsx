@@ -17,7 +17,6 @@ export default function AuthPage() {
   const navigate = useNavigate();
   const { user, isAdmin, profile, loading: authLoading } = useAuth();
 
-  // Redirect if already logged in
   useEffect(() => {
     if (authLoading || !user) return;
     if (isAdmin) {
@@ -44,25 +43,22 @@ export default function AuthPage() {
 
     const email = resolveEmail(username);
 
-    // Try sign in
     let { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
-      // If it's the super admin and account doesn't exist yet, bootstrap it
       if (
-        username.trim() === SUPER_ADMIN_EMAIL &&
-        password === SUPER_ADMIN_PASS
-      ) {
+      username.trim() === SUPER_ADMIN_EMAIL &&
+      password === SUPER_ADMIN_PASS)
+      {
         const { error: signUpErr } = await supabase.auth.signUp({
           email: SUPER_ADMIN_EMAIL,
           password: SUPER_ADMIN_PASS,
-          options: { data: { full_name: "Super Admin", is_super_admin: true } },
+          options: { data: { full_name: "Super Admin", is_super_admin: true } }
         });
         if (!signUpErr) {
-          // Try sign in again
           const result = await supabase.auth.signInWithPassword({
             email: SUPER_ADMIN_EMAIL,
-            password: SUPER_ADMIN_PASS,
+            password: SUPER_ADMIN_PASS
           });
           if (result.error) {
             toast.error("Giriş alınmadı: " + result.error.message);
@@ -87,19 +83,25 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
+    <main className="min-h-screen flex items-center justify-center bg-background p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md"
-      >
+        className="w-full max-w-md">
+        
+        {/* Back button */}
+        
+
         <div className="text-center mb-8">
           <div className="flex justify-center mb-4">
             <img
               alt="ATU Logo"
               className="h-16 w-auto"
-              src="/lovable-uploads/35eed5b3-f8df-4081-bc8e-74148a04d10b.png"
-            />
+              width="149"
+              height="64"
+              fetchPriority="high"
+              src="/lovable-uploads/35eed5b3-f8df-4081-bc8e-74148a04d10b.png" />
+            
           </div>
           <h1 className="text-2xl font-bold text-foreground">
             ATU İmtahan Portalı
@@ -121,8 +123,8 @@ export default function AuthPage() {
               onKeyDown={handleKeyDown}
               placeholder="İstifadəçi adınızı daxil edin"
               className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              autoComplete="username"
-            />
+              autoComplete="username" />
+            
           </div>
 
           <div>
@@ -136,22 +138,22 @@ export default function AuthPage() {
               onKeyDown={handleKeyDown}
               placeholder="Şifrənizi daxil edin"
               className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              autoComplete="current-password"
-            />
+              autoComplete="current-password" />
+            
           </div>
 
           <Button
             onClick={handleLogin}
             disabled={loading}
-            className="w-full h-12 gradient-cherry text-primary-foreground font-bold text-base rounded-xl shadow-lg"
-          >
-            {loading ? (
-              "Yüklənir..."
-            ) : (
-              <>
+            className="w-full h-12 gradient-cherry text-primary-foreground font-bold text-base rounded-xl shadow-lg">
+            
+            {loading ?
+            "Yüklənir..." :
+
+            <>
                 <LogIn className="h-4 w-4 mr-2" /> Daxil Ol
               </>
-            )}
+            }
           </Button>
 
           <p className="text-xs text-center text-muted-foreground">
@@ -159,6 +161,6 @@ export default function AuthPage() {
           </p>
         </div>
       </motion.div>
-    </div>
-  );
+    </main>);
+
 }
